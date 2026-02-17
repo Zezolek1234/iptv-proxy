@@ -59,22 +59,62 @@ const server = http.createServer((req, res) => {
     const parsedUrl = url.parse(req.url, true);
     const pathname = parsedUrl.pathname;
 
-    // ─── Config Endpoint (serves URLs from .env) ───
-    if (pathname === '/api/config') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({
-            m3uUrl: process.env.M3U_URL || '',
-            epgUrl: process.env.EPG_URL || 'https://epg.ovh/pl.xml',
-        }));
+    // ─── Playlist Endpoint (fetches M3U server-side, never exposes URL) ───
+    if (pathname === '/api/playlist') {
+        const m3uUrl = process.env.M3U_URL;
+        if (!m3uUrl) {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            return res.end('No M3U_URL configured');
+        }
+        console.log('[PLAYLIST] Fetching M3U server-side');
+        fetchUrl(m3uUrl, (err, data) => {
+            if (err) {
+                res.writeHead(502, { 'Content-Type': 'text/plain' });
+                return res.end('Failed to fetch playlist');
+            }
+            // Parse stream hosts from M3U to build allowed domains list
+            updateAllowedDomains(data);
+            res.writeHead(200, { 'Content-Type': 'audio/x-mpegurl' });
+            res.end(data);
+        });
+        return;
     }
 
-    // ─── Proxy Endpoint ───
+    // ─── EPG Endpoint (fetches EPG XML server-side, never exposes URL) ───
+    if (pathname === '/api/epg') {
+        const epgUrl = process.env.EPG_URL || 'https://epg.ovh/pl.xml';
+        console.log('[EPG] Fetching EPG server-side');
+        fetchUrl(epgUrl, (err, data) => {
+            if (err) {
+                res.writeHead(502, { 'Content-Type': 'text/plain' });
+                return res.end('Failed to fetch EPG');
+            }
+            res.writeHead(200, { 'Content-Type': 'application/xml' });
+            res.end(data);
+        });
+        return;
+    }
+
+    // ─── Proxy Endpoint (RESTRICTED to known stream domains only) ───
     if (pathname === '/api/proxy') {
         const targetUrl = parsedUrl.query.url;
 
         if (!targetUrl) {
             res.writeHead(400, { 'Content-Type': 'text/plain' });
             return res.end('Missing ?url= parameter');
+        }
+
+        // Security: only allow proxying to known stream domains
+        try {
+            const targetHost = new URL(targetUrl).hostname;
+            if (!isAllowedDomain(targetHost)) {
+                console.warn(`[PROXY] Blocked: ${targetHost}`);
+                res.writeHead(403, { 'Content-Type': 'text/plain' });
+                return res.end('Domain not allowed');
+            }
+        } catch (e) {
+            res.writeHead(400, { 'Content-Type': 'text/plain' });
+            return res.end('Invalid URL');
         }
 
         console.log(`[PROXY] ${targetUrl}`);
@@ -92,7 +132,6 @@ const server = http.createServer((req, res) => {
             if ([301, 302, 307, 308].includes(proxyRes.statusCode) && proxyRes.headers.location) {
                 const redirectUrl = proxyRes.headers.location;
                 console.log(`[PROXY] Redirect -> ${redirectUrl}`);
-                // Re-fetch with the redirect URL
                 const redirectFetcher = redirectUrl.startsWith('https') ? https : http;
                 redirectFetcher.get(redirectUrl, {
                     headers: {
@@ -159,13 +198,11 @@ const server = http.createServer((req, res) => {
 });
 
 function sendProxyResponse(clientRes, proxyRes) {
-    // Forward status and important headers, add CORS headers
     const headers = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': '*',
     };
 
-    // Forward content-type if present
     if (proxyRes.headers['content-type']) {
         headers['Content-Type'] = proxyRes.headers['content-type'];
     }
@@ -175,6 +212,54 @@ function sendProxyResponse(clientRes, proxyRes) {
 
     clientRes.writeHead(proxyRes.statusCode, headers);
     proxyRes.pipe(clientRes);
+}
+
+// ─── Helper: fetch URL and return data ───
+function fetchUrl(targetUrl, callback) {
+    const fetcher = targetUrl.startsWith('https') ? https : http;
+    const chunks = [];
+
+    fetcher.get(targetUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (IPTV Player Proxy)', 'Accept': '*/*' },
+        timeout: 30000,
+    }, (response) => {
+        // Follow one redirect
+        if ([301, 302, 307, 308].includes(response.statusCode) && response.headers.location) {
+            return fetchUrl(response.headers.location, callback);
+        }
+        response.on('data', chunk => chunks.push(chunk));
+        response.on('end', () => callback(null, Buffer.concat(chunks).toString('utf-8')));
+        response.on('error', err => callback(err));
+    }).on('error', err => callback(err));
+}
+
+// ─── Allowed domains (auto-populated from M3U) ───
+let allowedDomains = new Set();
+
+function updateAllowedDomains(m3uContent) {
+    const lines = m3uContent.split('\n');
+    const newDomains = new Set();
+    lines.forEach(line => {
+        line = line.trim();
+        if (line && !line.startsWith('#')) {
+            try {
+                const host = new URL(line).hostname;
+                newDomains.add(host);
+            } catch (e) { /* skip invalid URLs */ }
+        }
+    });
+    allowedDomains = newDomains;
+    console.log(`[SECURITY] Allowed ${allowedDomains.size} stream domains`);
+}
+
+function isAllowedDomain(hostname) {
+    // Check exact match or subdomain match
+    for (const domain of allowedDomains) {
+        if (hostname === domain || hostname.endsWith('.' + domain)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 server.listen(PORT, () => {
