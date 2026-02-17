@@ -44,36 +44,19 @@ document.addEventListener('DOMContentLoaded', () => {
     updateClock();
     setInterval(updateClock, 60000);
 
-    // Restore URL or use Default from server config
-    const savedUrl = localStorage.getItem('iptv_source_url');
-
-    // Fetch config from server (contains .env URLs)
-    fetch('/api/config')
-        .then(r => r.json())
-        .then(config => {
-            if (savedUrl) {
-                appState.sourceUrl = savedUrl;
-            } else if (config.m3uUrl) {
-                appState.sourceUrl = config.m3uUrl;
-            }
-            if (config.epgUrl) {
-                appState.epgUrl = config.epgUrl;
-            }
-            elements.m3uUrlInput.value = appState.sourceUrl;
-
-            // Auto-load if we have a URL
-            if (appState.sourceUrl) {
-                handleUrlUpload();
-            }
+    // Auto-load playlist from server (URL is kept secret server-side)
+    fetch('/api/playlist')
+        .then(response => {
+            if (!response.ok) throw new Error('Playlist fetch failed');
+            return response.text();
+        })
+        .then(data => {
+            parseM3U(data);
+            showNotification('Lista kanałów załadowana', 'success');
         })
         .catch(err => {
-            console.error('Failed to load config:', err);
-            // Fallback: use saved URL if available
-            if (savedUrl) {
-                appState.sourceUrl = savedUrl;
-                elements.m3uUrlInput.value = savedUrl;
-                handleUrlUpload();
-            }
+            console.error('Failed to load playlist:', err);
+            // Show upload state so user can load manually
         });
 
     // Event Listeners
@@ -221,10 +204,8 @@ function fetchEPG() {
     console.log("Fetching EPG...");
     showNotification("Pobieranie programu TV...", "info");
 
-    // Always fetch EPG through local proxy
-    const url = proxyUrl(appState.epgUrl);
-
-    fetch(url)
+    // Fetch EPG through secure server endpoint (URL hidden server-side)
+    fetch('/api/epg')
         .then(res => res.text())
         .then(str => {
             parseEPG(str);
