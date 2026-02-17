@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="pl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPTV Player</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- HLS.js -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <!-- Mpegts.js -->
+    <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="logo">
+                <i class="fa-solid fa-tv"></i> <span>IPTV</span>
+            </div>
+            <ul class="menu">
+                <li class="active" data-view="live-tv">
+                    <i class="fa-solid fa-broadcast-tower"></i> <span>Live TV</span>
+                </li>
+                <li data-view="movies">
+                    <i class="fa-solid fa-film"></i> <span>Filmy</span>
+                </li>
+                <li data-view="series">
+                    <i class="fa-solid fa-layer-group"></i> <span>Seriale</span>
+                </li>
+                <li data-view="epg">
+                    <i class="fa-solid fa-list-ol"></i> <span>Program TV</span>
+                </li>
+                <li data-view="settings">
+                    <i class="fa-solid fa-cog"></i> <span>Ustawienia</span>
+                </li>
+            </ul>
+            <div class="clock" id="clock">00:00</div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="content">
+            <!-- Top Bar -->
+            <header class="top-bar">
+                <div class="current-section" id="section-title">Live TV</div>
+                <div class="search-box">
+                    <i class="fa-solid fa-search"></i>
+                    <input type="text" id="search-input" placeholder="Szukaj kanału...">
+                </div>
+            </header>
+
+            <!-- Category Filter (Horizontal Scroll) -->
+            <div class="categories-bar" id="categories-container">
+                <button class="category-pill active" data-category="all">Wszystkie</button>
+                <!-- Categories will be injected here -->
+            </div>
+
+            <!-- Content Grid -->
+            <div class="media-container">
+                <div id="empty-state" class="empty-state">
+                    <i class="fa-solid fa-cloud-arrow-up"></i>
+                    <h2>Wgraj listę M3U</h2>
+                    <p>Wybierz plik z dysku lub wklej link do listy.</p>
+
+                    <div class="upload-options">
+                        <button class="btn-primary" onclick="document.getElementById('m3u-upload').click()">
+                            <i class="fa-solid fa-file-upload"></i> Wybierz plik localny
+                        </button>
+                        <input type="file" id="m3u-upload" accept=".m3u,.m3u8" style="display: none;">
+
+                        <div class="divider">lub</div>
+
+                        <div class="url-input-group">
+                            <input type="text" id="m3u-url" placeholder="https://example.com/playlist.m3u">
+                            <button class="btn-secondary" id="load-url-btn">Zaladuj z URL</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="media-grid" id="channels-grid" style="display: none;">
+                    <!-- Channels will be injected here -->
+                </div>
+                <div class="epg-list" id="epg-list" style="display: none;">
+                    <!-- EPG Items will be injected here -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Video Player Overlay -->
+    <div class="video-overlay" id="video-overlay">
+        <div class="video-container">
+            <video id="video-player" autoplay></video>
+            <button class="close-btn" id="close-player"><i class="fa-solid fa-xmark"></i></button>
+            <div class="player-osd" id="player-osd">
+                <div class="osd-top">
+                    <h2 id="player-channel-name">Channel Name</h2>
+                    <span id="player-group-name" style="opacity: 0.7;">Group</span>
+                </div>
+                <div class="osd-bottom">
+                    <div class="program-info">
+                        <div class="current-program">
+                            <span class="time" id="osd-start-time"></span>
+                            <strong id="osd-program-title">Brak informacji o programie</strong>
+                            <span class="time" id="osd-end-time"></span>
+                        </div>
+                        <div class="next-program" id="osd-next-program">
+                            <!-- Next program info -->
+                        </div>
+                    </div>
+                    <div class="progress-container">
+                        <div class="progress-bar" id="osd-progress-bar" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notifications -->
+    <div id="notification-area"></div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
