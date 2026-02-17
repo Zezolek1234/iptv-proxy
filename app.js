@@ -80,12 +80,9 @@ document.addEventListener('DOMContentLoaded', () => {
             appState.currentView = view;
             elements.sectionTitle.textContent = item.querySelector('span').textContent;
 
-            if (view === 'settings') {
-                elements.grid.style.display = 'none';
-                elements.emptyState.style.display = 'none'; // Hide upload state too
-                elements.categoriesContainer.style.display = 'none';
-                renderSettings();
-            } else if (view === 'epg') {
+            if (view === 'settings' || view === 'series') return; // Removed views
+
+            if (view === 'epg') {
                 elements.grid.style.display = 'none';
                 elements.emptyState.style.display = 'none';
                 elements.categoriesContainer.style.display = 'none';
@@ -334,13 +331,8 @@ function getChannelsForView(view) {
             group.includes('vod') || group.includes('cinema') ||
             name.includes('movie') || name.includes('vod');
 
-        const isSeries = group.includes('series') || group.includes('serial') ||
-            group.includes('season') || group.includes('episode') ||
-            name.includes('s0') || name.includes('e0'); // simple heuristic
-
         if (view === 'movies') return isMovie;
-        if (view === 'series') return isSeries;
-        if (view === 'live-tv') return !isMovie && !isSeries;
+        if (view === 'live-tv') return !isMovie;
 
         return true; // Fallback
     });
@@ -364,39 +356,8 @@ function renderCategories() {
     });
 }
 
-function renderSettings() {
-    elements.grid.style.display = 'grid';
-    elements.grid.style.display = 'flex';
-    elements.grid.style.flexDirection = 'column';
-    elements.grid.innerHTML = '';
-
-    const settingsContainer = document.createElement('div');
-    settingsContainer.className = 'settings-container';
-    settingsContainer.innerHTML = `
-        <div class="settings-card">
-            <h3>Konfiguracja Odtwarzania</h3>
-            <div class="setting-item">
-                <div class="setting-info">
-                    <strong>Serwer Proxy</strong>
-                    <p>Wszystkie żądania są automatycznie kierowane przez lokalny serwer proxy (node server.js). Nie potrzebujesz żadnych wtyczek CORS.</p>
-                    <p style="color: var(--accent); font-weight: 500;">✓ Serwer proxy aktywny na localhost:3000</p>
-                </div>
-            </div>
-             <div class="setting-item">
-                <div class="setting-info">
-                    <strong>Wgraj nową listę</strong>
-                    <p>Obecna lista zostanie zastąpiona.</p>
-                </div>
-                <button class="btn-secondary" onclick="document.getElementById('m3u-upload').click()">Wgraj plik</button>
-            </div>
-        </div>
-    `;
-
-    elements.grid.appendChild(settingsContainer);
-}
 
 function renderChannels() {
-    if (appState.currentView === 'settings') return; // Don't render channels in settings view
 
     if (appState.channels.length === 0) {
         elements.grid.style.display = 'none';
@@ -515,6 +476,16 @@ function playChannel(channel) {
     document.addEventListener('mousedown', resetIdleTimer);
     document.addEventListener('keydown', resetIdleTimer);
 
+    // Click-to-unmute: if video was muted due to autoplay restrictions
+    const unmuteHandler = () => {
+        if (video.muted) {
+            video.muted = false;
+            showNotification("Dźwięk włączony", "success");
+        }
+        video.removeEventListener('click', unmuteHandler);
+    };
+    video.addEventListener('click', unmuteHandler);
+
 
     // Cleanup previous players
     if (appState.hls) {
@@ -589,11 +560,19 @@ function playChannel(channel) {
 
         appState.mpegtsPlayer.attachMediaElement(video);
         appState.mpegtsPlayer.load();
-        var promise = appState.mpegtsPlayer.play();
+
+        // Try to play — fall back to muted if autoplay is blocked
+        var promise = video.play();
         if (promise !== undefined) {
             promise.catch(e => {
-                console.error("MPEGTS Play error", e);
-                showNotification("Błąd startu MPEGTS. Spróbuj kliknąć play.", "warning");
+                console.warn("MPEGTS autoplay blocked, trying muted", e);
+                video.muted = true;
+                video.play().then(() => {
+                    showNotification("Odtwarzanie wyciszone — kliknij aby włączyć dźwięk.", "warning");
+                }).catch(e2 => {
+                    console.error("MPEGTS Play error even muted", e2);
+                    showNotification("Błąd startu MPEGTS. Spróbuj kliknąć play.", "warning");
+                });
             });
         }
 
